@@ -130,7 +130,7 @@ class DB
 
     def convert_value(value) 
       if value[0] == "\"" 
-        value
+        value[1..value.length - 2]
       else
         value.to_i
       end
