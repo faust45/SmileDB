@@ -129,7 +129,7 @@ class DB
     end
 
     def convert_value(value) 
-      if value[0] == 34
+      if value[0] == "\"" 
         value
       else
         value.to_i

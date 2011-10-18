@@ -1,5 +1,5 @@
-require 'db.rb'
-require 'index.rb'
+require './db'
+require './index'
 
 class Symbol
   def gt(value)
