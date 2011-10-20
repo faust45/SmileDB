@@ -1,10 +1,18 @@
+require './extensions'
+require './index'
+
 class DB
   DELIMITER = "----------\n"
   class WrongRecordType < Exception; end
 
   def initialize(file_name)
     @file  = File.open("#{file_name}.txt", File::RDWR|File::APPEND|File::CREAT)
+    @file_read  = File.open("#{file_name}.txt", File::RDONLY|File::APPEND|File::CREAT)
     @index = Index.new(file_name)
+  end
+
+  def clear
+    @file.truncate(0)
   end
 
   def add(record)
@@ -15,6 +23,8 @@ class DB
       record.each do |(key, value)|
         @file.write("#{key}: #{value.to_db}\n")
       end
+
+      @file.flush
     else
       raise WrongRecordType.new
     end
@@ -24,17 +34,13 @@ class DB
   def where(*conditions)
     load_data
     @records.find_all do |record|
-      # [true, true, true], [true, false, false]
+      # results = [true, true, true], [true, false, false]
       results =
         conditions.map do |condition|
           condition.check?(record) ? Condition::Success : Condition::Fail
         end
 
-      if any_conditions_fail?(results)
-        false
-      else
-        true
-      end
+      all_conditions_success?(results)
     end
   end
 
@@ -114,7 +120,7 @@ class DB
       if @records == nil
         @records = []
         $/ = DELIMITER
-        while (raw_record = @file.readline)
+        while (raw_record = @file_read.readline)
           record = {}
           raw_record.sub(DELIMITER, '').split("\n").each do |item|
             item.match /(.*):\s(.*)/ 
@@ -136,7 +142,7 @@ class DB
       end
     end
 
-    def any_conditions_fail?(conditons)
-      conditons.include?(Condition::Fail)
+    def all_conditions_success?(conditons)
+      !conditons.include?(Condition::Fail)
     end
 end
