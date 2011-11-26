@@ -23,6 +23,12 @@ class Integer
   end
 end
 
+class Array
+  def to_db
+    to_s
+  end
+end
+
 class String
   def to_db
     "\"#{self}\""

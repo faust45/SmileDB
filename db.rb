@@ -1,5 +1,8 @@
 require './extensions'
+require './conditions'
 require './index'
+require 'yaml'
+
 
 class DB
   DELIMITER = "----------\n"
@@ -16,133 +19,112 @@ class DB
   end
 
   def add(record)
-    if record.is_a?(Hash)
-      @file.write(DELIMITER)
+    raise WrongRecordType.new unless record.is_a?(Hash)
+      
+    record[:id]   ||= gen_id
+    record[:_rev] ||= gen_rev
 
-      record[:id] ||= gen_id
-      record.each do |(key, value)|
-        @file.write("#{key}: #{value.to_db}\n")
-      end
+    @file.write(DELIMITER)
+    @file.write(dump(record))
+    @file.flush
 
-      @file.flush
-    else
-      raise WrongRecordType.new
-    end
+    @records_hash = nil
   end
 
   # [DB::Condition.new, DB::Condition.new]  .check?(record)
   def where(*conditions)
     load_data
-    @records.find_all do |record|
+    @records_hash.values.map do |record|
       # results = [true, true, true], [true, false, false]
       results =
         conditions.map do |condition|
           condition.check?(record) ? Condition::Success : Condition::Fail
         end
 
-      all_conditions_success?(results)
-    end
+      if all_conditions_success?(results)
+        record.clone
+      end
+    end.compact.sort{|el, other| el[:id] <=> other[:id]}
   end
 
-  def update(id, attrs)
+  def update(record)
+    raise "For update require :id field" if record[:id] == nil
+
+    record[:_rev] += 1
+    add(record)
+  end
+
+  def delete(record)
+    record[:_delete] = true 
+    update(record)
   end
 
   def get(id)
   end
 
-  def delete(id)
-  end
-
-  def gen_id
-    Time.now.utc.to_f.to_s.sub('.', '').to_i
-  end
-
-  module Condition
-    Success = true 
-    Fail    = false 
-
-    class GT
-      def initialize(field_name, value)
-        @field_name = field_name
-        @value = value
-      end
-
-      def check?(record)
-        if record[@field_name]
-          @value < record[@field_name]
-        end
-      end
-    end
-
-    class LT
-      def initialize(field_name, value)
-        @field_name = field_name
-        @value = value
-      end
-
-      def check?(record)
-        if record[@field_name]
-          record[@field_name] < @value 
-        end
-      end
-    end
-
-    class Between 
-      def initialize(field_name, value)
-        @field_name = field_name
-        @value = value
-      end
-
-      def check?(record)
-        if record[@field_name]
-          @value.first < record[@field_name] and
-            @value.last > record[@field_name]
-        end
-      end
-    end
-
-    class LIKE
-      def initialize(field_name, value)
-        @field_name = field_name
-        @value = value
-      end
-
-      def check?(record)
-        if record[@field_name]
-          record[@field_name].to_s.downcase.match @value.to_s.downcase
-        end
-      end
-    end
-  end
-
   private
-    def load_data
-      if @records == nil
-        @records = []
-        $/ = DELIMITER
-        while (raw_record = @file_read.readline)
-          record = {}
-          raw_record.sub(DELIMITER, '').split("\n").each do |item|
-            item.match /(.*):\s(.*)/ 
-            record[$1.to_sym] = convert_value($2) 
-          end
+    def gen_id
+      Time.now.utc.to_f.to_s.sub('.', '').to_i
+    end
 
-          @records << record
+    def gen_rev
+      1
+    end
+
+    def load_data
+      if @records_hash == nil
+        @records_hash = {} 
+        $/ = DELIMITER
+        @file_read.rewind
+        while (raw_record = @file_read.readline)
+          record = load(raw_record)
+          @records_hash[record[:id]] = record
+
+          if record[:_delete]
+            @records_hash.delete(record[:id])
+          end
         end
       end
 
     rescue EOFError
     end
 
+    def all_conditions_success?(conditons)
+      !conditons.include?(Condition::Fail)
+    end
+
+    def dump(record)
+      text = ''
+      record.each do |(key, value)|
+        text << "#{key}: #{value.to_db}\n"
+      end
+
+      text
+    end
+
+    def load(text)
+      record = {}
+      text.sub(DELIMITER, '').split("\n").each do |item|
+        item.match /(.*):\s(.*)/ 
+        record[$1.to_sym] = convert_value($2) 
+      end
+
+      record
+    end
+
     def convert_value(value) 
       if value[0] == "\"" 
         value[1..value.length - 2]
+      elsif value[0] == "["
+        convert_array(value)
       else
         value.to_i
       end
     end
 
-    def all_conditions_success?(conditons)
-      !conditons.include?(Condition::Fail)
+    def convert_array(value)
+      value[1..value.length - 2].split(', ').map do |el|
+        convert_value(el) 
+      end
     end
 end

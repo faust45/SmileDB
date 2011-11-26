@@ -1,17 +1,15 @@
 class Index
   def initialize(file)
     @file  = File.open("#{file}.ix", File::RDWR|File::APPEND|File::CREAT)
+    @file_read  = File.open("#{file}.ix", File::RDONLY|File::APPEND|File::CREAT)
   end
 
-  def add
+  def add(key, value, data)
   end
 
-  def update
+  def get(key, value)
   end
 
-  def get
-  end
-
-  def delete
+  def delete(key, value)
   end
 end
